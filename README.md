@@ -1,6 +1,6 @@
 # ALT Multi-Stage Monitor (Step1 → Step2 → Step3 → Step4)
 
-Production-ready Python automation for real-time ALT pipeline monitoring with **MSSQL** persistence.
+Production-ready Python automation for real-time ALT pipeline monitoring with **Microsoft SQL Server (SSMS)** persistence.
 
 ## Stages covered
 
