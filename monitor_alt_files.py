@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from datetime import datetime, date, time as dtime, timedelta
 from email.message import EmailMessage
 from pathlib import Path
-from typing import Dict, Optional, Any
+from typing import Dict, Optional, Any, List
 from zoneinfo import ZoneInfo
 
 import pyodbc
@@ -47,7 +47,6 @@ class Settings:
         "ALT_MSSQL_CONN_STR",
         "Driver={ODBC Driver 17 for SQL Server};Server=localhost;Database=ALT_MONITOR;Trusted_Connection=yes;TrustServerCertificate=yes;",
     )
-    mssql_auto_setup: bool = os.getenv("ALT_MSSQL_AUTO_SETUP", "true").lower() == "true"
 
     stages: tuple = (
         StageConfig("STEP1", r"C:\Users\karun\Downloads\ALT\01_VU\Altruista", ".txt", None),
@@ -58,11 +57,10 @@ class Settings:
 
 
 class MSSQLStateStore:
-    def __init__(self, conn_str: str, auto_setup: bool = True):
+    def __init__(self, conn_str: str):
         self.conn = pyodbc.connect(conn_str, autocommit=False)
         self.conn.timeout = 30
-        if auto_setup:
-            self._setup_schema()
+        self._setup_schema()
 
     def _setup_schema(self) -> None:
         ddl = """
@@ -102,47 +100,6 @@ BEGIN
         details NVARCHAR(MAX) NULL
     );
 END;
-
-
-IF OBJECT_ID('dbo.usp_alt_stage_upsert_arrival', 'P') IS NULL
-BEGIN
-    EXEC('CREATE PROCEDURE dbo.usp_alt_stage_upsert_arrival AS BEGIN SET NOCOUNT ON; END');
-END;
-
-EXEC('ALTER PROCEDURE dbo.usp_alt_stage_upsert_arrival
-    @stage_name NVARCHAR(20),
-    @file_name NVARCHAR(260),
-    @logical_name NVARCHAR(260),
-    @file_ext NVARCHAR(10),
-    @file_size_bytes BIGINT,
-    @arrival_ts_ist DATETIME2,
-    @last_seen_ts_ist DATETIME2,
-    @large_file BIT
-AS
-BEGIN
-    SET NOCOUNT ON;
-
-    UPDATE dbo.stage_file_state
-    SET file_size_bytes = @file_size_bytes,
-        last_seen_ts_ist = @last_seen_ts_ist,
-        active = 1
-    WHERE stage_name = @stage_name
-      AND file_name = @file_name;
-
-    IF @@ROWCOUNT = 0
-    BEGIN
-        INSERT INTO dbo.stage_file_state (
-            stage_name, file_name, logical_name, file_ext,
-            file_size_bytes, arrival_ts_ist, last_seen_ts_ist,
-            large_file, active
-        )
-        VALUES (
-            @stage_name, @file_name, @logical_name, @file_ext,
-            @file_size_bytes, @arrival_ts_ist, @last_seen_ts_ist,
-            @large_file, 1
-        );
-    END
-END;');
 """
         cur = self.conn.cursor()
         cur.execute(ddl)
@@ -156,9 +113,26 @@ END;');
         self.conn.commit()
 
     def upsert_arrival(self, stage: str, file_name: str, logical_name: str, ext: str, file_size_bytes: int, arrival: datetime, now: datetime, large_file: bool) -> None:
+        sql = """
+MERGE dbo.stage_file_state AS target
+USING (SELECT ? AS stage_name, ? AS file_name) AS src
+ON target.stage_name = src.stage_name AND target.file_name = src.file_name
+WHEN MATCHED THEN
+    UPDATE SET
+        file_size_bytes = ?,
+        last_seen_ts_ist = ?,
+        active = 1
+WHEN NOT MATCHED THEN
+    INSERT (stage_name, file_name, logical_name, file_ext, file_size_bytes, arrival_ts_ist, last_seen_ts_ist, large_file, active)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1);
+"""
         self.conn.execute(
-            "EXEC dbo.usp_alt_stage_upsert_arrival ?,?,?,?,?,?,?,?",
+            sql,
             (
+                stage,
+                file_name,
+                file_size_bytes,
+                now.replace(tzinfo=None),
                 stage,
                 file_name,
                 logical_name,
@@ -236,7 +210,7 @@ END;');
 class MultiStageFileMonitor:
     def __init__(self, cfg: Settings):
         self.cfg = cfg
-        self.store = MSSQLStateStore(cfg.mssql_conn_str, auto_setup=cfg.mssql_auto_setup)
+        self.store = MSSQLStateStore(cfg.mssql_conn_str)
         self.stage_map = {s.name: s for s in cfg.stages}
         for stage in cfg.stages:
             Path(stage.folder).mkdir(parents=True, exist_ok=True)

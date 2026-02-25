@@ -12,9 +12,9 @@ Production-ready Python automation for real-time ALT pipeline monitoring with **
 ## Core workflow
 
 - Matches only files containing today's `YYYYMMDD` in name.
-- STEP2 is processed only if same logical file (same base name / stem) moved from STEP1.
-- STEP3 is processed only if same logical file moved from STEP2.
-- STEP4 is processed only if same logical file moved from STEP3.
+- STEP2 is processed only if same logical file (same base name / stem) has moved from STEP1.
+- STEP3 is processed only if same logical file has moved from STEP2.
+- STEP4 is processed only if same logical file has moved from STEP3.
 - This prevents stage interference/confusion.
 
 ## Alerts and notifications
@@ -34,25 +34,21 @@ STEP1 business-window control:
 - Expected count: **2 files**
 - Missing-file alert sent once/day after 08:30 if count is short.
 
-## SSMS (SQL Server) setup
+## MSSQL storage
 
-### 1) Open SSMS and run schema script
+Tables auto-created:
+- `dbo.stage_file_state` (state per stage+file)
+- `dbo.event_log` (auditable runtime/events/errors)
 
-Run:
-- `sql/alt_monitor_schema.sql`
+This supports restart-safe behavior, deduplicated alerts, and negative-scenario recovery.
 
-This script creates:
-- `dbo.stage_file_state`
-- `dbo.event_log`
-- `dbo.usp_alt_stage_upsert_arrival`
-
-### 2) Python dependency
+## Dependency
 
 ```bash
 pip install pyodbc
 ```
 
-### 3) Connection string
+## Connection string
 
 Set environment variable:
 
@@ -60,11 +56,7 @@ Set environment variable:
 set ALT_MSSQL_CONN_STR=Driver={ODBC Driver 17 for SQL Server};Server=YOUR_SERVER;Database=ALT_MONITOR;UID=YOUR_USER;PWD=YOUR_PASSWORD;TrustServerCertificate=yes;
 ```
 
-Optional: if DB is already prepared in SSMS and you want to skip auto-DDL from Python:
-
-```bash
-set ALT_MSSQL_AUTO_SETUP=false
-```
+Default fallback uses localhost trusted connection.
 
 ## Mail setup
 
