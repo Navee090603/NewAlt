@@ -1,6 +1,6 @@
-# ALT Multi-Stage Monitor (Step1 → Step2 → Step3 → Step4) - No SQL Version
+# ALT Multi-Stage Monitor (Step1 → Step2 → Step3 → Step4)
 
-Production-ready Python automation for real-time ALT pipeline monitoring with optimized **file-based state + detailed logs**.
+Production-ready Python automation for real-time ALT pipeline monitoring with **Microsoft SQL Server (SSMS)** persistence.
 
 ## Stages covered
 
@@ -11,11 +11,11 @@ Production-ready Python automation for real-time ALT pipeline monitoring with op
 
 ## Core workflow
 
-- Matches only files containing today's `YYYYMMDD` in filename.
-- STEP2 starts only after same logical file moved from STEP1.
-- STEP3 starts only after same logical file moved from STEP2.
-- STEP4 starts only after same logical file moved from STEP3.
-- Prevents stage interference/confusion.
+- Matches only files containing today's `YYYYMMDD` in name.
+- STEP2 is processed only if same logical file (same base name / stem) has moved from STEP1.
+- STEP3 is processed only if same logical file has moved from STEP2.
+- STEP4 is processed only if same logical file has moved from STEP3.
+- This prevents stage interference/confusion.
 
 ## Alerts and notifications
 
@@ -34,20 +34,29 @@ STEP1 business-window control:
 - Expected count: **2 files**
 - Missing-file alert sent once/day after 08:30 if count is short.
 
-## Persistence and logging (No SQL)
+## MSSQL storage
 
-- Runtime state file: `state/monitor_state.json`
-- Rotating operational log: `logs/monitor.log`
-- Structured event audit log: `logs/events.jsonl`
+Tables auto-created:
+- `dbo.stage_file_state` (state per stage+file)
+- `dbo.event_log` (auditable runtime/events/errors)
 
-This provides restart-safe continuity and detailed process traceability without database dependency.
+This supports restart-safe behavior, deduplicated alerts, and negative-scenario recovery.
 
-## Optimization done
+## Dependency
 
-- Uses `os.scandir` for faster directory polling.
-- Uses atomic state writes (`.tmp` + replace) to avoid corruption.
-- Uses rotating logs to avoid unlimited growth.
-- Uses in-memory state object with periodic checkpoint save.
+```bash
+pip install pyodbc
+```
+
+## Connection string
+
+Set environment variable:
+
+```bash
+set ALT_MSSQL_CONN_STR=Driver={ODBC Driver 17 for SQL Server};Server=YOUR_SERVER;Database=ALT_MONITOR;UID=YOUR_USER;PWD=YOUR_PASSWORD;TrustServerCertificate=yes;
+```
+
+Default fallback uses localhost trusted connection.
 
 ## Mail setup
 
